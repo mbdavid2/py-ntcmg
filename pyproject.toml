@@ -1,0 +1,27 @@
+[project]
+name = "pyntcm"
+version = "0.1.0"
+description = "Package with an implementation of the NTCM-G algorithm"
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = []
+
+[build-system]
+requires = ["build", "setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[[tool.setuptools.ext-modules]]
+name = "pyntcm._c_ext"
+sources = [
+    "pyntcm/_c_ext/src/ntcmg.cpp"
+]
+include-dirs = ["pyntcm/"]
+
+[tool.setuptools.packages.find]
+include = ["pyntcm", "pyntcm.*"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+pythonpath = ["."]

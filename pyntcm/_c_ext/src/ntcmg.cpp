@@ -13,6 +13,7 @@ This code is licensed under MIT license (see LICENSE file for details)
 
 
 #include <cmath>
+#include <Python.h>
 
 namespace ntcmg
 {
@@ -158,8 +159,7 @@ double vtec2stec_mapping_function(
 	return MF;
 }
 
-
-double stec( // TECU
+std::pair<double, double> compute_vtec( // TECU
 	double ai0,
 	double ai1,
 	double ai2,
@@ -256,10 +256,59 @@ double stec( // TECU
 	// VTEC NTCM-G
 	double VTEC= F1*F2*F3*F4*F5; // Eq. 3
 	
+	return std::pair<double, double>(VTEC, elev);
+
+	// ORIGINAL CODE: simply return STEC
+	// STEC
+	//return vtec2stec_mapping_function(elev)*VTEC; // Eq. 34
+}
+
+double stec( // TECU
+	double ai0,
+	double ai1,
+	double ai2,
+	double rxlat, // rad
+	double rxlon, // rad
+	double rxalt, // m
+	double satlat, // rad
+	double satlon, // rad
+	double satalt,// m
+	double utc_time, // hour
+	double doy // day
+	)
+{
+	std::pair<double, double> result = compute_vtec(ai0, ai1, ai2, rxlat, rxlon, rxalt, satlat, satlon, satalt, utc_time, doy);
+	double VTEC = result.first;
+	double elev = result.second;
+
 	// STEC
 	return vtec2stec_mapping_function(elev)*VTEC; // Eq. 34
 }
 
+double vtec( // TECU
+	double ai0,
+	double ai1,
+	double ai2,
+	double lat, // rad
+	double lon, // rad
+	double utc_time, // hour
+	double doy // day
+	)
+{
+	// Use same lat/lon for sat and rx
+	double rxlat = lat;
+	double rxlon = lon;
+	double satlat = lat;
+	double satlon = lon;
+
+	// Use 0 for rxalt and 20200km for satalt
+	double rxalt = 0.0;
+	double satalt = 20200000.0; // m
+
+	std::pair<double, double> result = compute_vtec(ai0, ai1, ai2, rxlat, rxlon, rxalt, satlat, satlon, satalt, utc_time, doy);
+
+	return result.first; // VTEC
+}
 
 double iono_delay( // m
 	double STEC,	// TECU
@@ -1352,3 +1401,79 @@ double test() // 0 is good
 }
 
 };// namespace
+
+static PyObject* py_stec(PyObject* self, PyObject* args, PyObject* kwargs) {
+    double ai0, ai1, ai2, rxlat, rxlon, rxalt, satlat, satlon, satalt, utc_time, doy;
+
+	static char* kwlist[] = {
+        (char*)"ai0",
+        (char*)"ai1",
+        (char*)"ai2",
+        (char*)"rxlat",
+        (char*)"rxlon",
+        (char*)"rxalt",
+        (char*)"satlat",
+        (char*)"satlon",
+        (char*)"satalt",
+        (char*)"utc_time",
+        (char*)"doy",
+        NULL  // Sentinel
+    };
+
+    // "ddddddddddd" for 11 doubles
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddddddddddd", kwlist,
+                          &ai0, &ai1, &ai2, &rxlat, &rxlon, &rxalt, 
+                          &satlat, &satlon, &satalt, &utc_time, &doy)) {
+        return NULL; // Raise TypeError if arguments are wrong
+    }
+
+    double result = ntcmg::stec(ai0, ai1, ai2, rxlat, rxlon, rxalt, 
+                         satlat, satlon, satalt, utc_time, doy);
+
+    return PyFloat_FromDouble(result);
+}
+
+static PyObject* py_vtec(PyObject* self, PyObject* args, PyObject* kwargs) {
+    double ai0, ai1, ai2, lat, lon, utc_time, doy;
+
+	static char* kwlist[] = {
+        (char*)"ai0",
+        (char*)"ai1",
+        (char*)"ai2",
+        (char*)"lat",
+        (char*)"lon",
+        (char*)"utc_time",
+        (char*)"doy",
+        NULL  // Sentinel
+    };
+
+    // "ddddddd" for 7 doubles
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddddddd", kwlist,
+                          &ai0, &ai1, &ai2, &lat, &lon, &utc_time, &doy)) {
+        return NULL; // Raise TypeError if arguments are wrong
+    }
+
+    double result = ntcmg::vtec(ai0, ai1, ai2, lat, lon, utc_time, doy);
+
+    return PyFloat_FromDouble(result);
+}
+
+static PyMethodDef NtcmMethods[] = {
+    {"stec", (PyCFunction)py_stec, METH_VARARGS | METH_KEYWORDS, "Calculate Slant TEC"},
+	{"vtec", (PyCFunction)py_vtec, METH_VARARGS | METH_KEYWORDS, "Calculate Vertical TEC"},
+    {NULL, NULL, 0, NULL} // Sentinel
+};
+
+static struct PyModuleDef ntcm_module = {
+    PyModuleDef_HEAD_INIT,
+    "_c_ext",                   
+    "NTCM-G C++ Extension",
+    -1,
+    NtcmMethods
+};
+
+extern "C" {
+    PyMODINIT_FUNC PyInit__c_ext(void) {
+        return PyModule_Create(&ntcm_module);
+    }
+}
